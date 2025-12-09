@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agenda do Dia — Editável</title>
+  <style>
+    :root{
+      --bg:#f5f5f5; --card:#fff; --text:#222; --accent:#4a90e2; --muted:#666;
+    }
+    [data-theme='dark']{ --bg:#0f1720; --card:#0b1220; --text:#e6eef8; --accent:#6ea8ff; --muted:#9fb1cc }
+
+    *{box-sizing:border-box}
+    body{font-family:Inter, Roboto, Arial, sans-serif; margin:0; padding:20px; background:var(--bg); color:var(--text)}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    h1{margin:0;font-size:20px}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{background:var(--accent);color:white;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;color:var(--text);border:1px solid rgba(0,0,0,0.06)}
+    .wrap{max-width:900px;margin:18px auto}
+    .grid{display:grid;grid-template-columns:1fr;gap:18px}
+    .section{background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(10,20,30,0.06)}
+    .section h2{margin:0 0 8px 0;font-size:16px}
+    .item{display:flex;gap:12px;align-items:flex-start;padding:10px;border-radius:8px;background:linear-gradient(180deg, rgba(0,0,0,0.01), transparent);border-left:4px solid var(--accent)}
+    .time{font-weight:700;min-width:100px}
+    .desc{flex:1;outline:none}
+    .small{font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+    .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+    input, select, textarea{padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.08);width:100%}
+    .form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px}
+    @media (max-width:640px){ .form{grid-template-columns:1fr; } .time{min-width:70px} }
+    footer{margin-top:16px;color:var(--muted);font-size:13px;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Agenda do Dia — Editável</h1>
+      <div class="controls">
+        <button id="toggleTheme">Modo Escuro</button>
+        <button id="downloadBtn">Salvar / Baixar HTML</button>
+        <button id="clearBtn" class="ghost">Limpar Salvamentos</button>
+      </div>
+    </header>
+
+    <div class="grid">
+
+      <div class="section">
+        <div class="toolbar">
+          <div class="small">Adicionar nova tarefa:</div>
+        </div>
+        <form id="addForm" class="form">
+          <select id="addSection" required>
+            <option value="morning">Manhã (08h00 às 11h30)</option>
+            <option value="lunch">Almoço (11h30 às 13h30)</option>
+            <option value="afternoon">Tarde (13h30 às 17h00)</option>
+          </select>
+          <input id="addTime" placeholder="Horário (ex: 08:00 – 08:15)" required />
+          <input id="addText" placeholder="Descrição da tarefa" required />
+          <button type="submit">Adicionar</button>
+        </form>
+      </div>
+
+      <div id="morningSection" class="section">
+        <h2>Manhã (08h00 às 11h30)</h2>
+        <!-- itens serão renderizados aqui -->
+      </div>
+
+      <div id="lunchSection" class="section">
+        <h2>Almoço (11h30 às 13h30)</h2>
+      </div>
+
+      <div id="afternoonSection" class="section">
+        <h2>Tarde (13h30 às 17h00)</h2>
+      </div>
+
+    </div>
+
+    <footer>
+      Clique em qualquer tarefa para editar. As alterações são salvas automaticamente no seu navegador (LocalStorage). Use "Salvar / Baixar HTML" para gerar um arquivo com as mudanças.
+    </footer>
+  </div>
+
+  <script>
+    // Dados iniciais padrão (se não houver localStorage)
+    const defaultData = {
+      morning:[
+        {time:'08:00 – 08:15', text:'Organizar o espaço e revisar pendências.'},
+        {time:'08:15 – 09:30', text:'Finalizar documentações urgentes.'},
+        {time:'09:30 – 10:15', text:'Responder e-mails prioritários.'},
+        {time:'10:15 – 11:00', text:'Resolver tarefas urgentes no sistema.'},
+        {time:'11:00 – 11:30', text:'Atualizar formulários do Programa do Leite.'}
+      ],
+      lunch:[ {time:'11:30 – 13:30', text:'Descanso / pausa / refeição.'} ],
+      afternoon:[
+        {time:'13:30 – 14:45', text:'Continuar atualização dos formulários do Programa do Leite.'},
+        {time:'14:45 – 15:30', text:'Pausa + Revisão da planilha de documentos (2025).'},
+        {time:'15:30 – 16:15', text:'Organizar informações do relatório de atividades (2025).'},
+        {time:'16:15 – 17:00', text:'Planejamento das melhorias do setor de RH.'}
+      ]
+    };
+
+    const STORAGE_KEY = 'agendaData_v1';
+    const THEME_KEY = 'agendaTheme_v1';
+
+    // elementos
+    const morningEl = document.getElementById('morningSection');
+    const lunchEl = document.getElementById('lunchSection');
+    const afternoonEl = document.getElementById('afternoonSection');
+    const addForm = document.getElementById('addForm');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const toggleTheme = document.getElementById('toggleTheme');
+    const clearBtn = document.getElementById('clearBtn');
+
+    // carrega dados
+    function loadData(){
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        try{ return JSON.parse(raw); }catch(e){ console.warn('Erro ao ler storage, usando padrão'); return defaultData; }
+      }
+      return defaultData;
+    }
+
+    let data = loadData();
+
+    // renderiza
+    function render(){
+      morningEl.querySelectorAll('.item').forEach(n=>n.remove());
+      lunchEl.querySelectorAll('.item').forEach(n=>n.remove());
+      afternoonEl.querySelectorAll('.item').forEach(n=>n.remove());
+
+      data.morning.forEach((it, idx)=>{
+        morningEl.appendChild(makeItem(it, 'morning', idx));
+      });
+      data.lunch.forEach((it, idx)=> lunchEl.appendChild(makeItem(it,'lunch',idx)));
+      data.afternoon.forEach((it, idx)=> afternoonEl.appendChild(makeItem(it,'afternoon',idx)));
+    }
+
+    function makeItem(obj, section, index){
+      const wrap = document.createElement('div');
+      wrap.className = 'item';
+
+      const t = document.createElement('div'); t.className='time'; t.textContent = obj.time;
+      const d = document.createElement('div'); d.className='desc'; d.contentEditable = true; d.spellcheck = false; d.innerText = obj.text;
+
+      const actions = document.createElement('div'); actions.style.minWidth='40px';
+      const del = document.createElement('button'); del.textContent='✖'; del.title='Remover tarefa'; del.style.border='0'; del.style.background='transparent'; del.style.cursor='pointer';
+      del.addEventListener('click', ()=>{ removeTask(section,index); });
+
+      wrap.appendChild(t); wrap.appendChild(d); wrap.appendChild(actions); actions.appendChild(del);
+
+      // salvar on blur
+      d.addEventListener('blur', ()=>{
+        updateTaskText(section,index,d.innerText.trim());
+      });
+      // salvar on Enter (previnindo quebra de linha)
+      d.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); d.blur(); }
+      });
+
+      return wrap;
+    }
+
+    function updateTaskText(section,index,text){
+      if(text===undefined) text='';
+      data[section][index].text = text;
+      persist();
+    }
+
+    function removeTask(section,index){
+      data[section].splice(index,1);
+      persist(); render();
+    }
+
+    addForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const section = document.getElementById('addSection').value;
+      const time = document.getElementById('addTime').value||'--';
+      const text = document.getElementById('addText').value||'';
+      data[section].push({time, text});
+      document.getElementById('addTime').value=''; document.getElementById('addText').value='';
+      persist(); render();
+      // scroll to newly added
+      setTimeout(()=>{
+        const sections = {morning:morningEl,lunch:lunchEl,afternoon:afternoonEl};
+        sections[section].lastElementChild.scrollIntoView({behavior:'smooth'});
+      },100);
+    });
+
+    // persistir no localStorage
+    function persist(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    // download do HTML atual (gera um arquivo index.html com o HTML atual do app)
+    downloadBtn.addEventListener('click', ()=>{
+      // clona o documento atual e transforma em string, mantendo os dados editados
+      const clone = document.documentElement.cloneNode(true);
+      // remove scripts para segurança
+      clone.querySelectorAll('script').forEach(s=>s.remove());
+
+      // inserir os dados atuais como JSON para recuperação quando reabrir
+      const meta = document.createElement('script');
+      meta.type='application/json'; meta.id='__AGENDADATA__';
+      meta.textContent = JSON.stringify(data, null, 2);
+      clone.querySelector('body').appendChild(meta);
+
+      const html = '<!doctype html>
+' + clone.outerHTML;
+      const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'agenda-do-dia.html'; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // modo escuro
+    function applyTheme(theme){
+      if(theme==='dark') document.documentElement.setAttribute('data-theme','dark');
+      else document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem(THEME_KEY, theme);
+      toggleTheme.textContent = theme==='dark' ? 'Modo Claro' : 'Modo Escuro';
+    }
+    toggleTheme.addEventListener('click', ()=>{
+      const cur = localStorage.getItem(THEME_KEY) || 'light';
+      applyTheme(cur==='dark' ? 'light' : 'dark');
+    });
+
+    // limpar salvamentos
+    clearBtn.addEventListener('click', ()=>{
+      if(confirm('Isso apagará os dados salvos no seu navegador. Deseja continuar?')){
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(THEME_KEY);
+        data = JSON.parse(JSON.stringify(defaultData));
+        applyTheme('light');
+        render();
+      }
+    });
+
+    // auto-save periódico
+    setInterval(()=>{ persist(); }, 20000);
+
+    // load theme
+    (function init(){
+      const theme = localStorage.getItem(THEME_KEY) || 'light';
+      applyTheme(theme);
+      render();
+    })();
+
+    // make the sections editable on click (delegation to allow re-render)
+    document.addEventListener('click', (e)=>{
+      const tgt = e.target;
+      if(tgt.classList && tgt.classList.contains('desc')){
+        // focus já cuida do restante
+      }
+    });
+
+    // Ao abrir um arquivo HTML gerado por este app, caso contenha script #__AGENDADATA__, ofereça importar
+    window.addEventListener('load', ()=>{
+      const embed = document.getElementById('__AGENDADATA__');
+      if(embed){
+        try{
+          const imported = JSON.parse(embed.textContent);
+          if(confirm('Arquivo contém dados da agenda — deseja importar para o seu navegador?')){
+            data = imported; persist(); render();
+            embed.remove();
+          }
+        }catch(e){/* ignore */}
+      }
+    });
+
+  </script>
+</body>
+</html>
